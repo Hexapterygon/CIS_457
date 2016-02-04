@@ -1,9 +1,10 @@
 /*************************
  * Nathan Anderle
- * Lab 2
+ * Vignesh Suresh 
+ * Project 1
  * Client
  * Professor Kalafut
- * 1/22/2016
+ * 2/03/2016
  ************************/
 
 #include <sys/socket.h>
@@ -15,10 +16,9 @@
 #include <stdlib.h>
 #include <arpa/inet.h>
 
-void transferFile(int);
+void transferFile(int i);
 
 int main (int argc, char** argv){
-
 
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if(sockfd < 0){
@@ -50,7 +50,8 @@ int main (int argc, char** argv){
         printf("Enter an IP address: ");
         scanf("%s", input);
 
-        //inet_pton returns 0 if the input is not a valid IP address and -1 if there is an error
+        //inet_pton returns 0 if the input is not a valid IP address and -1 if
+        //there is an error
         if(inet_pton(AF_INET, input, &(serveraddr.sin_addr)) > 0){
 
             serveraddr.sin_addr.s_addr = inet_addr(input);
@@ -71,39 +72,50 @@ int main (int argc, char** argv){
     }
 
     transferFile(sockfd);
-
     return 0;     
 }
 
 void transferFile(int sockfd){
 
+    FILE* fp; 
+    //user entered filename
+    char line[5000];
+    //buffer used for reading from socket
+    char oline[512];
+    //Used to indicate invalid file or file size
+    char status[256];
+    //User decision for another file
+    char choice = '\0';
+    //Kill character for invalid input or exit
+    char kc = 'q';
+    //Character written back to server to indicate next read
+    char lock_step = '^';
+    //Num bytes read off socket
+    int bytesReceived = 0;
+    //Integer representation of file size
+    int f_size = 0;
+
+    //remove scanf newline char
     getchar();   
+    //Flush stdin for safe measure
     fflush(stdin);
     printf("Enter a file to request: ");
-
-    char line[5000];
-    char oline[512];
-    char status[256];
-    char choice = '\0';
-    char kc = 'q';
-    char blargle = '^';
-
     fgets(line, 5000, stdin);
 
     send(sockfd, line, strlen(line), 0);
 
-    printf("Ok, I sent it!\n");
-    FILE* fp; 
+    printf("Client request sent to the server\n");
+    //Trim any lingering undesireable chars
     line[strcspn(line, "\r\n")] = 0;
-    int bytesReceived = 0;
-    int f_size = 0;
 
+    //If we get -1 back from server, file doesn't exist
     read(sockfd, &status, 256 );
     if(status[0] != -1){
 
+        //file exists. Create file to write to
         fp = fopen(line, "wb");
+        //Convert read-in file size to an int
         f_size = atoi(status);
-        //printf("%d\n", f_size);
     }
 
     else{
@@ -112,26 +124,18 @@ void transferFile(int sockfd){
     }
 
     int total = 0;
+    //Continuously read off the socket until we have read
+    //all the bytes indicated by the file size
     while(total < f_size){
 
-        bzero(&oline, sizeof(oline));
-       // printf("Heelloo!\n");
-
-       // printf("%d\n", total);
         bytesReceived = read(sockfd, oline, 512);
-        
-       // if((bytesReceived = read(sockfd, oline, 512)) < 512){
         fwrite(oline, 1 ,bytesReceived,fp);
         total += bytesReceived;
 
-
-        //printf("%d\n",bytesReceived);
-        //printf("%d\n",total);
-
-        write(sockfd,&blargle, 1); 
+        //Write a bit back to the server to indicate done reading
+        write(sockfd,&lock_step, 1); 
 
     }
-        //printf("jazz\n");
 
     fclose(fp);
     printf("Server communication done\n"); 
@@ -139,10 +143,12 @@ void transferFile(int sockfd){
 
     scanf("%c", &choice);
 
+    //If yes, run transfer logic again
     if(choice == 'y'){
         write(sockfd, &choice, 1);
         transferFile(sockfd);
     }
+    //For 'no' and invalid input, exit the program
     else {
         write(sockfd, &kc, 1);
         printf("Bye!\n");

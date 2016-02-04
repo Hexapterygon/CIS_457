@@ -1,9 +1,10 @@
 /**************************************************
  * Nathan Anderle
- * Lab 2
+ * Vignesh Suresh 
+ * Project 1
  * Server
  * Professor Kalafut
- * 1/22/2016
+ * 2/03/2016
  **************************************************/
 
 #include <sys/socket.h>
@@ -17,14 +18,18 @@
 #include <sys/select.h>
 #include <signal.h>
 
-int childnum = 0;
 void transferFile(int i);
 
-/**************************************************
- * 
- *
- *************************************************/
 int main (int argc, char** argv){
+
+    //Use sigaction to prevent creation of zombie children
+    //Allows parent to completely ignore how children are
+    //exiting. Default behavior is to let them die.
+    struct sigaction sigchld_action = {
+        .sa_handler = SIG_DFL,
+        .sa_flags = SA_NOCLDWAIT
+    };
+    sigaction(SIGCHLD, &sigchld_action, NULL);
 
     //Set up a socket that uses AF_INET domain (i.e. IPv4) and SOCK_STREAM 
     //semantics for the communication (i.e. Transmission Control Protocol/TCP)
@@ -35,23 +40,12 @@ int main (int argc, char** argv){
         return 1;
     }
 
-    fd_set sockets;
-    FD_ZERO(&sockets);
-
-    struct sigaction sigchld_action = {
-        .sa_handler = SIG_DFL,
-        .sa_flags = SA_NOCLDWAIT
-    };
-    sigaction(SIGCHLD, &sigchld_action, NULL);
-
-    //Structure used for holding addressing information about the client and server
+    //Structure used for holding addressing information about the client and
+    //server
     struct sockaddr_in serveraddr, clientaddr;
 
     //Using IPv4
     serveraddr.sin_family=AF_INET;
-
-    //The port number for the connection. Will be set later.
-    //serveraddr.sin_port = NULL;
 
     //Use the default interface's IP address
     serveraddr.sin_addr.s_addr=INADDR_ANY;
@@ -73,61 +67,55 @@ int main (int argc, char** argv){
             exit(-1);
         }
     }
-    //assign sockfd to a name. Request that serveraddr be used as the address of the socket.
+
+    //assign sockfd to a name. Request that serveraddr be used as the address
+    //of the socket.
     bind(sockfd,(struct sockaddr*)&serveraddr, sizeof(serveraddr));
 
     //Wait for connections on the socket specified by sockfd
     //Have 10 length backlog queue. Any attempted connections
     //after 10 backlogged connections will be refused.
     listen(sockfd, 10);
-    FD_SET(sockfd, &sockets);
+
     pid_t childpid;
 
     while(1){
 
         socklen_t len = sizeof(clientaddr);
-        fd_set tmp_set = sockets;
-        select(FD_SETSIZE, &tmp_set, NULL, NULL, NULL);
+        int clientsocket;
+        if((clientsocket = accept(sockfd, (struct sockaddr*)&clientaddr, &len)) > 0){
+            printf("Client has connected.\n");
+            
 
-        int i;
-
-        for(i = 0; i < FD_SETSIZE; ++i){
-            if(FD_ISSET(i, &tmp_set)){
-
-                if(i == sockfd){
-                    printf("Client has connected.\n");
-                    ++childnum;
-                    int clientsocket = accept(sockfd, (struct sockaddr*)&clientaddr, &len);
-                    FD_SET(clientsocket, &sockets);
-                }
-                else{
-
-                    if((childpid = fork()) == -1){
-                        perror("Fork error.");
-                    }
-                    else if(childpid == 0 ){
-
-                        transferFile(i);
-                    }
-
-                    close(i);
-                    FD_CLR(i, &sockets);
-
-                }
+            //A client has connected. Fork off a child process to handle their
+            //requests. Allow the parent to continue listening for additional
+            //clients.
+            if((childpid = fork()) == -1){
+                perror("Fork error.");
             }
-        }
+            else if(childpid == 0 ){
+
+                transferFile(clientsocket);
+            }
+
+            close(clientsocket);
+        } 
     }
     return 0;
 }
 
 void transferFile(int i){
 
+    FILE *file;
+    //user entered filename
     char line[5000];
     char file_size[256];
     char file_buf[512];
     char choice = '\0';
-    char ugh = '\0';
-
+    //Character received from the client to know it's ready for write
+    char lock_step = '\0';
+    char status = 1;
+    int readbytes = 0;
 
     //receive a message from the specified socket and store it in line
     recv(i, line, 5000, 0);
@@ -135,55 +123,56 @@ void transferFile(int i){
     line[strcspn(line, "\r\n")] = 0;
     printf("Client has requested %s\n", line);
 
-    FILE *file;
     file = fopen(line, "rb");
-    char status = 1;
 
+    //attempted to open file, doesn't exist
     if (file == NULL){
+
         printf("Client has requested invalid file\n");
-        //write a message to the socket
+        printf("Client disconnected\n");
+
+        //Let the client know an invalid file requested
         status = -1;
         write(i, &status,  1);
     }
-    else{
 
+    else{
+        //Seek to end of file. Used distance travelled
+        //to determine file size. Return to beginning of file
         fseek(file, 0L, SEEK_END);
         int sz = ftell(file);
         fseek(file, 0L, SEEK_SET);
+        //Convert file size to char[] and write to client
         sprintf(file_size, "%d", sz);
-        int readbytes = 0;
-        status = 1;
         write(i, file_size,  strlen(file_size));
-//        int total = 0;
 
+        //Continuously read until all bytes of file are read in
         while((readbytes = fread(file_buf, sizeof(char), 512, file)) > 0){
 
             write(i, file_buf, readbytes);
-            read(i, &ugh, 1);
-            //printf("%d\n",readbytes);
-            //total += readbytes;
-            //printf("%d\n",total);
+            //Wait for the okay from the client to write again
+            read(i, &lock_step, 1);
         }
         fclose(file);
     }
 
-//printf("Hey\n");
-
+    //Wait for client decision
     while(1){
-        //printf("Hello\n");
         read(i, &choice, 1);
+        //if 'yes', call transfer logic again
         if(choice == 'y'){
-           bzero(line, 5000);
-           transferFile(i); 
-           break;
+            bzero(line, 5000);
+            transferFile(i); 
+            break;
         }
+        //if 'no' or invalid, kill the child process
         else if (choice == 'n'){
-                        printf("Client connection closed\n");
-                        kill(getpid(), SIGKILL);
+            printf("Client connection closed\n");
+            kill(getpid(), SIGKILL);
         }
         else if (choice == 'q'){
-                        printf("Client connection closed\n");
-                        kill(getpid(), SIGKILL);
+            printf("Client connection closed\n");
+            kill(getpid(), SIGKILL);
         }
     }
 }
