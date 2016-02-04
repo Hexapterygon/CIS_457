@@ -1,0 +1,86 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<title>~/Documents/Semester 6/CIS_457/Labs/Lab2/deliverable/server.c.html</title>
+<meta name="Generator" content="Vim/7.3">
+<meta name="plugin-version" content="vim7.3_v6">
+<meta name="syntax" content="c">
+<meta name="settings" content="use_css,number_lines">
+<style type="text/css">
+<!--
+pre { font-family: monospace; color: #000000; background-color: #ffffff; }
+body { font-family: monospace; color: #000000; background-color: #ffffff; }
+.lnr { color: #bcbcbc; background-color: #eeeeee; }
+.Constant { color: #008787; }
+.Structure { color: #000000; font-weight: bold; }
+.Special { color: #008700; font-weight: bold; }
+.Statement { color: #000000; font-weight: bold; }
+.Number { color: #008787; }
+.Type { color: #5f5f87; font-weight: bold; }
+.String { color: #d7005f; }
+.PreProc { color: #9e9e9e; font-weight: bold; }
+.Comment { color: #a8a8a8; }
+-->
+</style>
+</head>
+<body>
+<pre>
+<span class="lnr"> 1 </span><span class="Comment">/*</span><span class="Comment">************************</span>
+<span class="lnr"> 2 </span><span class="Comment"> * Nathan Anderle</span>
+<span class="lnr"> 3 </span><span class="Comment"> * Lab 2</span>
+<span class="lnr"> 4 </span><span class="Comment"> * Server</span>
+<span class="lnr"> 5 </span><span class="Comment"> * Professor Kalafut</span>
+<span class="lnr"> 6 </span><span class="Comment"> * 1/22/2016</span>
+<span class="lnr"> 7 </span><span class="Comment"> **********************</span><span class="Comment">*/</span>
+<span class="lnr"> 8 </span>
+<span class="lnr"> 9 </span><span class="PreProc">#include </span><span class="String">&lt;sys/socket.h&gt;</span>
+<span class="lnr">10 </span><span class="PreProc">#include </span><span class="String">&lt;netinet/in.h&gt;</span>
+<span class="lnr">11 </span><span class="PreProc">#include </span><span class="String">&lt;stdio.h&gt;</span>
+<span class="lnr">12 </span><span class="PreProc">#include </span><span class="String">&lt;string.h&gt;</span>
+<span class="lnr">13 </span>
+<span class="lnr">14 </span><span class="Type">int</span> main (<span class="Type">int</span> argc, <span class="Type">char</span>** argv){
+<span class="lnr">15 </span>
+<span class="lnr">16 </span>    <span class="Type">int</span> sockfd = socket(AF_INET, SOCK_STREAM, <span class="Number">0</span>);
+<span class="lnr">17 </span>    <span class="Statement">if</span>(sockfd &lt; <span class="Number">0</span>){
+<span class="lnr">18 </span>
+<span class="lnr">19 </span>        printf(<span class="String">&quot;There was an error creating the socket</span><span class="Special">\n</span><span class="String">&quot;</span>);
+<span class="lnr">20 </span>        <span class="Statement">return</span> <span class="Number">1</span>;
+<span class="lnr">21 </span>    }
+<span class="lnr">22 </span>
+<span class="lnr">23 </span>    <span class="Structure">struct</span> sockaddr_in serveraddr, clientaddr;
+<span class="lnr">24 </span>    serveraddr.sin_family=AF_INET;
+<span class="lnr">25 </span>    <span class="Comment">//htons = host to network short</span>
+<span class="lnr">26 </span>    <span class="Comment">//ntohs = netowrk to host short</span>
+<span class="lnr">27 </span>    <span class="Comment">//serveraddr.sin_port=htons(9876);</span>
+<span class="lnr">28 </span>    serveraddr.sin_port= <span class="Constant">NULL</span>;
+<span class="lnr">29 </span>    serveraddr.sin_addr.s_addr=INADDR_ANY;
+<span class="lnr">30 </span>
+<span class="lnr">31 </span>    <span class="Type">int</span> num = <span class="Number">0</span>;
+<span class="lnr">32 </span>    printf(<span class="String">&quot;Enter a port number: &quot;</span>);
+<span class="lnr">33 </span>    scanf(<span class="String">&quot;</span><span class="Special">%d</span><span class="String">&quot;</span>, &amp;num);
+<span class="lnr">34 </span>    serveraddr.sin_port = htons(num);
+<span class="lnr">35 </span>
+<span class="lnr">36 </span>    <span class="Type">int</span> e = bind(sockfd,(<span class="Structure">struct</span> sockaddr*)&amp;serveraddr, <span class="Statement">sizeof</span>(serveraddr));
+<span class="lnr">37 </span>    listen(sockfd, <span class="Number">10</span>);
+<span class="lnr">38 </span>
+<span class="lnr">39 </span>    <span class="Statement">while</span>(<span class="Number">1</span>){
+<span class="lnr">40 </span>
+<span class="lnr">41 </span>        <span class="Type">int</span> len = <span class="Statement">sizeof</span>(clientaddr);
+<span class="lnr">42 </span>        <span class="Type">int</span> clientsocket = accept(sockfd, (<span class="Structure">struct</span> sockaddr*)&amp;clientaddr, &amp;len);
+<span class="lnr">43 </span>        <span class="Type">char</span> line[<span class="Number">5000</span>];
+<span class="lnr">44 </span>        <span class="Type">int</span> n = recv(clientsocket, line, <span class="Number">5000</span>, <span class="Number">0</span>);
+<span class="lnr">45 </span>        line[n] = <span class="Special">'\0'</span>;
+<span class="lnr">46 </span>        printf(<span class="String">&quot;Got from client: </span><span class="Special">%s</span><span class="Special">\n</span><span class="String">&quot;</span>, line);
+<span class="lnr">47 </span>        printf(<span class="String">&quot;Echoing </span><span class="Special">%s</span><span class="String"> back!&quot;</span>, line);
+<span class="lnr">48 </span>
+<span class="lnr">49 </span>        write(clientsocket, line, strlen(line));
+<span class="lnr">50 </span>        close(clientsocket);
+<span class="lnr">51 </span>    }
+<span class="lnr">52 </span>
+<span class="lnr">53 </span>    <span class="Statement">return</span> <span class="Number">0</span>;
+<span class="lnr">54 </span>
+<span class="lnr">55 </span>}
+</pre>
+</body>
+</html>
