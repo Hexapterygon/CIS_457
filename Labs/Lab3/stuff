@@ -1,0 +1,3 @@
+if the first two bits are 1, it's not a length it is a pointer. (look at the hex values)
+
+this is in the answers section when one gets a non- ASCII response
