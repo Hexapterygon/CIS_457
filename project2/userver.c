@@ -36,7 +36,7 @@ struct nameserver{
 int determineValid(char*);
 int determineError(char*);
 void errorResponse(char*,int);
-int sendToRoot(char*,int, int);
+int sendToNameServer(char*,int, int);
 void queryNext(char*, char*);
 void answerClient(char*);
 struct nameserver getNext(char*, int);
@@ -91,7 +91,7 @@ int main (int argc, char** argv){
             //Put modified header back into the buffer
             memcpy(line, &request, 12);
             //send the request to the root resolver
-            if(sendToRoot(line, sze, sockfd)) {exit(1);}
+            if(sendToNameServer(line, sze, sockfd)) {exit(1);}
         }
         else{
             errorResponse(line, sockfd);
@@ -100,9 +100,9 @@ int main (int argc, char** argv){
     return 0;
 }
 
-int sendToRoot(char* query, int len, int clientsock){
+int sendToNameServer(char* query, int len, int clientsock){
 
-    char rootResponse[512];
+    char nsResponse[512];
     socklen_t lent = sizeof(clientaddr);
 
     //Set up a new  UDP socket on port 53 for DNS queries
@@ -123,25 +123,25 @@ int sendToRoot(char* query, int len, int clientsock){
     sendto(reqsock,query, len + 16,0,(struct sockaddr*)&serveraddr,sizeof(serveraddr));
 
     //Receive the response from the root server
-    recvfrom(reqsock, rootResponse, 512, 0, (struct sockaddr*)&serveraddr, &lent);
+    recvfrom(reqsock, nsResponse, 512, 0, (struct sockaddr*)&serveraddr, &lent);
 
     //Relay errors from root to client if they exist
     //Otherwise, check for query answers.
-    int lenth = determineValid(rootResponse);
+    int lenth = determineValid(nsResponse);
 
-    if(determineError(rootResponse)){
-        errorResponse(rootResponse, clientsock);
+    if(determineError(nsResponse)){
+        errorResponse(nsResponse, clientsock);
     }
     else{
 
-        struct nameserver next =  getNext(rootResponse, lenth);
+        struct nameserver next =  getNext(nsResponse, lenth);
 
         printf("Type: %s\n", next.type);
         printf("Address: %s\n", next.address);
         printf("TTL: %d\n", next.ttl);
         // printf("Name: %s\n", next.name);
 
-        if(rootResponse[8] == 0){
+        if(nsResponse[8] == 0){
             queryNext(query, next.address);
         }
         else{
@@ -152,18 +152,18 @@ int sendToRoot(char* query, int len, int clientsock){
 }
 
 void queryNext(char* query, char* address){
-        printf("Hey, we made it here\n");
+        printf("\n");
 }
 
-struct nameserver getNext(char* rootResponse, int lenth){
+struct nameserver getNext(char* nsResponse, int lenth){
 
     struct nameserver nextQuery = {};
     //First two letters of name server used for identification
     char ident[2];
     //First letter of first record name in Authoritative section
-    ident[0] = rootResponse[lenth + 18];
+    ident[0] = nsResponse[lenth + 18];
     //Second letter of first record name in Authoritative section
-    ident[1] = rootResponse[lenth + 19];
+    ident[1] = nsResponse[lenth + 19];
 
     //Start the index after the identifying charcters are selected
     int x = lenth + 20;
@@ -174,28 +174,28 @@ struct nameserver getNext(char* rootResponse, int lenth){
     //use both sections to glean the name, type, ttl, and address of a single nameserver. 
     while(x < 512){
         //First letter matches
-        if(rootResponse[rootResponse[x] +1] == ident[0]){
+        if(nsResponse[nsResponse[x] +1] == ident[0]){
             //Second letter matches
-            if(rootResponse[rootResponse[x] +2] == ident[1]){
+            if(nsResponse[nsResponse[x] +2] == ident[1]){
                 //get TTL
-                u_int8_t ttl_1 = rootResponse[x + 5];
-                u_int8_t ttl_2 = rootResponse[x + 6];
-                u_int8_t ttl_3 = rootResponse[x + 7];
-                u_int8_t ttl_4 = rootResponse[x + 8];
+                u_int8_t ttl_1 = nsResponse[x + 5];
+                u_int8_t ttl_2 = nsResponse[x + 6];
+                u_int8_t ttl_3 = nsResponse[x + 7];
+                u_int8_t ttl_4 = nsResponse[x + 8];
                 u_int32_t ttl = (u_int32_t) ttl_1 << 24 | (u_int32_t)ttl_2 << 16 | (u_int32_t)ttl_3 << 8 | (u_int32_t)ttl_4;
                 nextQuery.ttl = ttl;
 
                 //get Address
-                unsigned char jazz = rootResponse[x +11];
-                sprintf(nextQuery.address, "%u.%d.%d.%d",jazz, rootResponse[x + 12], rootResponse[x + 13], rootResponse[x + 14]);
+                unsigned char jazz = nsResponse[x +11];
+                sprintf(nextQuery.address, "%u.%d.%d.%d",jazz, nsResponse[x + 12], nsResponse[x + 13], nsResponse[x + 14]);
                 //add[strcspn(add, "\r\n")] = 0;
 
                 //Get the name type of the request. 
                 int v = 0;
-                int d = rootResponse[lenth + 6] + 1;
-                while(rootResponse[d] != '\0'){
-                    //printf("%c\n", rootResponse[d]);
-                    nextQuery.type[v] = rootResponse[d];
+                int d = nsResponse[lenth + 6] + 1;
+                while(nsResponse[d] != '\0'){
+                    //printf("%c\n", nsResponse[d]);
+                    nextQuery.type[v] = nsResponse[d];
                     d ++;
                     v++;
                 }
