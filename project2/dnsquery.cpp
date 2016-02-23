@@ -16,6 +16,7 @@ struct dnshdr{
   u_int8_t aa:1;
   u_int8_t opcode:4;
   u_int8_t qr:1;
+
   u_int8_t rcode:4;
   u_int8_t cd:1;
   u_int8_t ad:1;
@@ -55,21 +56,27 @@ int main(int argc, char** argv){
   char buf[512] = {};
   //copy the header into the start of char arrray in correct order
   memcpy(buf,&queryheader,12);
+
   char qname[] = "www.google.com";
   int namelength=strlen(qname)+2;
   char *encodedname = (char*)malloc(namelength);
+
   encodename(qname,encodedname);
+  
   //copy stuff starting at 12 deep into the buffer
   memcpy(&buf[12],encodedname,namelength);
   buf[12+namelength+1]=TYPE_A;
   buf[12+namelength+3]=CLASS_IN;
+
   sendto(mysock,buf,16+namelength,0,(struct sockaddr*)&dnsserver,sizeof(dnsserver));
 
   char recvbuf[512];
   socklen_t len = sizeof(dnsserver);
   recvfrom(mysock,recvbuf,512,0,(struct sockaddr*)&dnsserver,&len);
+
   dnshdr replyheader;
   memcpy(&replyheader,recvbuf,12);
+  
   if(replyheader.rcode!=0){
     printf("error, rcode was %d\n",replyheader.rcode);
     return 0;
