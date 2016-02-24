@@ -37,8 +37,9 @@ int determineValid(char*);
 int determineError(char*);
 void errorResponse(char*,int);
 int sendToNameServer(char*,int, int, char*);
-void answerClient(char*);
+void answerClient(char*, int);
 struct nameserver getNext(char*, int);
+struct nameserver build(char*, struct nameserver, int, int);
 
 int main (int argc, char** argv){
 
@@ -141,13 +142,13 @@ int sendToNameServer(char* query, int len, int clientsock, char* address){
             printf("Type: %s\n", next.type);
             printf("Address: %s\n", next.address);
             printf("TTL: %d\n", next.ttl);
-            printf("Answers: %d\n", nsResponse[7]);
+            printf("Answers: %d\n\n\n", nsResponse[7]);
 
             sendToNameServer(query,len,clientsock, next.address);
         }
         else{
             printf("I got the answer\n");
-            // answerClient();
+            answerClient(nsResponse, clientsock);
         }
     }
     return 0;
@@ -173,52 +174,31 @@ struct nameserver getNext(char* nsResponse, int lenth){
     //
 
 
-
-
-   
-   int party =  nsResponse[lenth + 15];
-   int reception = lenth + 16;
-   char bottle[party];
-   int u = 0;
-
-   while (u < party){
-       bottle[u] = nsResponse[reception + u];
-       u++;
-   }
-
-
     while(x < 512){
         //First letter matches
         if(nsResponse[nsResponse[x] +1] == ident[0]){
             //Second letter matches
             if(nsResponse[nsResponse[x] +2] == ident[1]){
-                //get TTL
-                u_int8_t ttl_1 = nsResponse[x + 5];
-                u_int8_t ttl_2 = nsResponse[x + 6];
-                u_int8_t ttl_3 = nsResponse[x + 7];
-                u_int8_t ttl_4 = nsResponse[x + 8];
-                u_int32_t ttl = (u_int32_t) ttl_1 << 24 | (u_int32_t)ttl_2 << 16 | (u_int32_t)ttl_3 << 8 | (u_int32_t)ttl_4;
-                nextQuery.ttl = ttl;
 
-                //get Address
-                unsigned char jazz = nsResponse[x +11];
-                unsigned char ska = nsResponse[x +12];
-                unsigned char reggae = nsResponse[x +13];
-                unsigned char blues  = nsResponse[x +14];
-                sprintf(nextQuery.address, "%u.%u.%u.%u",jazz, ska, reggae, blues);
-                //add[strcspn(add, "\r\n")] = 0;
-                //Get the name type of the request. 
-                int v = 0;
-                int d = nsResponse[lenth + 6] + 1;
-                while(nsResponse[d] != '\0'){
-                    //printf("%c\n", nsResponse[d]);
-                    nextQuery.type[v] = nsResponse[d];
-                    d ++;
-                    v++;
+                u_int8_t ptr = nsResponse[x-1];
+                int b = ptr & (1 << 7);
+                int n = ptr & (1 << 6);
+                if(b == 128 &&  n == 64){
+                    if(nsResponse[x + 2] == 1){
+                        nextQuery = build(nsResponse, nextQuery, x, lenth);
+                        break;
+                    }
+                    else{
+
+                        while(x < 512){
+                            if(nsResponse[x] == 1 && nsResponse[x+1] == '\0' && nsResponse[x+2] == 1){
+                                printf("hey, you got an IPv6 response. Try again later\n");
+                                break;
+                            }
+                            break;
+                        }
+                   }
                 }
-                nextQuery.type[v] = '\0';
-
-                break;
             }
         }
         x++;
@@ -226,9 +206,65 @@ struct nameserver getNext(char* nsResponse, int lenth){
     return nextQuery;
 }
 
+struct nameserver build(char* nsResponse, struct nameserver nextQuery, int x, int lenth){
 
-void answerClient(char* loaction){
+    //get TTL
+    u_int8_t ttl_1 = nsResponse[x + 5];
+    u_int8_t ttl_2 = nsResponse[x + 6];
+    u_int8_t ttl_3 = nsResponse[x + 7];
+    u_int8_t ttl_4 = nsResponse[x + 8];
+    u_int32_t ttl = (u_int32_t) ttl_1 << 24 | (u_int32_t)ttl_2 << 16 | (u_int32_t)ttl_3 << 8 | (u_int32_t)ttl_4;
+    nextQuery.ttl = ttl;
 
+    //get Address
+    unsigned char jazz = nsResponse[x +11];
+    unsigned char ska = nsResponse[x +12];
+    unsigned char reggae = nsResponse[x +13];
+    unsigned char blues  = nsResponse[x +14];
+    sprintf(nextQuery.address, "%u.%u.%u.%u",jazz, ska, reggae, blues);
+    //add[strcspn(add, "\r\n")] = 0;
+
+    //Get the name type of the request. 
+    int v = 0;
+    int d = nsResponse[lenth + 6] + 1;
+    while(nsResponse[d] != '\0'){
+        //printf("%c\n", nsResponse[d]);
+        nextQuery.type[v] = nsResponse[d];
+        d ++;
+        v++;
+    }
+    nextQuery.type[v] = '\0';
+    return nextQuery;
+}
+
+void answerClient(char* answerBuf, int sockfd){
+
+    struct dnshdr ansHdr = {};
+    memcpy(&ansHdr, answerBuf, 12);
+
+    /*printf("Recursion desired: %u\n", ansHdr.rd);
+    printf("TC: %u\n", ansHdr.tc);
+    printf("AA: %u\n", ansHdr.aa);
+    printf("OP: %u\n", ansHdr.opcode);
+    printf("QR: %u\n", ansHdr.qr);
+    printf("Rcode: %u\n", ansHdr.rcode);
+    printf("CD: %u\n", ansHdr.cd);
+    printf("AD: %u\n", ansHdr.ad);
+    printf("Z: %u\n", ansHdr.z);
+    printf("QCount: %u\n", ansHdr.qcount);
+    printf("AnCount: %u\n", ansHdr.ancount);
+    printf("AuthCount: %u\n", ansHdr.authcount);
+    printf("AddhCount: %u\n", ansHdr.addcount);
+
+    printf("5: %u\n", answerBuf[5]);
+    printf("6: %u\n", answerBuf[6]);
+    printf("7: %u\n", answerBuf[7]);
+    printf("8: %u\n", answerBuf[8]);
+    printf("9: %u\n", answerBuf[9]);
+    printf("Address: %u\n", answerBuf[10]);*/
+
+
+    sendto(sockfd, answerBuf, 512, 0, (struct sockaddr*)&clientaddr,sizeof(clientaddr));
 
 }
 
