@@ -36,8 +36,7 @@ struct nameserver{
 int determineValid(char*);
 int determineError(char*);
 void errorResponse(char*,int);
-int sendToNameServer(char*,int, int);
-void queryNext(char*, char*);
+int sendToNameServer(char*,int, int, char*);
 void answerClient(char*);
 struct nameserver getNext(char*, int);
 
@@ -85,13 +84,14 @@ int main (int argc, char** argv){
         memcpy(&request, line, 12);
 
         int sze = 0;
+        char* rootAddr = "198.41.0.4";
         if((sze = determineValid(line)) > 0){
             //Do no query recursively
             request.rd = 0;
             //Put modified header back into the buffer
             memcpy(line, &request, 12);
             //send the request to the root resolver
-            if(sendToNameServer(line, sze, sockfd)) {exit(1);}
+            if(sendToNameServer(line, sze, sockfd, rootAddr)) {exit(1);}
         }
         else{
             errorResponse(line, sockfd);
@@ -100,7 +100,7 @@ int main (int argc, char** argv){
     return 0;
 }
 
-int sendToNameServer(char* query, int len, int clientsock){
+int sendToNameServer(char* query, int len, int clientsock, char* address){
 
     char nsResponse[512];
     socklen_t lent = sizeof(clientaddr);
@@ -114,7 +114,7 @@ int sendToNameServer(char* query, int len, int clientsock){
     //Standard DNS port
     int port = htons(53);
     //IP address of a root server
-    int addr = inet_addr("198.41.0.4");
+    int addr = inet_addr(address);
     serveraddr.sin_port = port;
     serveraddr.sin_addr.s_addr = addr;
     serveraddr.sin_family=AF_INET;
@@ -134,25 +134,23 @@ int sendToNameServer(char* query, int len, int clientsock){
     }
     else{
 
-        struct nameserver next =  getNext(nsResponse, lenth);
 
-        printf("Type: %s\n", next.type);
-        printf("Address: %s\n", next.address);
-        printf("TTL: %d\n", next.ttl);
-        // printf("Name: %s\n", next.name);
+        if(nsResponse[7] == 0){
+            struct nameserver next =  getNext(nsResponse, lenth);
 
-        if(nsResponse[8] == 0){
-            queryNext(query, next.address);
+            printf("Type: %s\n", next.type);
+            printf("Address: %s\n", next.address);
+            printf("TTL: %d\n", next.ttl);
+            printf("Answers: %d\n", nsResponse[7]);
+
+            sendToNameServer(query,len,clientsock, next.address);
         }
         else{
+            printf("I got the answer\n");
             // answerClient();
         }
     }
     return 0;
-}
-
-void queryNext(char* query, char* address){
-        printf("\n");
 }
 
 struct nameserver getNext(char* nsResponse, int lenth){
@@ -172,6 +170,23 @@ struct nameserver getNext(char* nsResponse, int lenth){
     //sections). This is attempting to match the first two bytes of an additional record with
     //the first two bytes of it's corresponding authoritative record. By doing this, we can
     //use both sections to glean the name, type, ttl, and address of a single nameserver. 
+    //
+
+
+
+
+   
+   int party =  nsResponse[lenth + 15];
+   int reception = lenth + 16;
+   char bottle[party];
+   int u = 0;
+
+   while (u < party){
+       bottle[u] = nsResponse[reception + u];
+       u++;
+   }
+
+
     while(x < 512){
         //First letter matches
         if(nsResponse[nsResponse[x] +1] == ident[0]){
@@ -187,9 +202,11 @@ struct nameserver getNext(char* nsResponse, int lenth){
 
                 //get Address
                 unsigned char jazz = nsResponse[x +11];
-                sprintf(nextQuery.address, "%u.%d.%d.%d",jazz, nsResponse[x + 12], nsResponse[x + 13], nsResponse[x + 14]);
+                unsigned char ska = nsResponse[x +12];
+                unsigned char reggae = nsResponse[x +13];
+                unsigned char blues  = nsResponse[x +14];
+                sprintf(nextQuery.address, "%u.%u.%u.%u",jazz, ska, reggae, blues);
                 //add[strcspn(add, "\r\n")] = 0;
-
                 //Get the name type of the request. 
                 int v = 0;
                 int d = nsResponse[lenth + 6] + 1;
