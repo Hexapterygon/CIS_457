@@ -46,7 +46,7 @@ int determineError(char*);
 void errorResponse(char*,int);
 int sendToNameServer(char*,int, int, string);
 void answerClient(char*, int);
-char* checkCache(char*);
+string checkCache(char*);
 
 struct nameserver getNext(char*, int);
 struct nameserver build(char*, struct nameserver, int, int);
@@ -112,13 +112,6 @@ int main (int argc, char** argv){
                 errorResponse(line, sockfd);
             }
         }
-
-        if(!cache.empty()){
-            for(cMap::iterator it = cache.begin();
-                    it != cache.end(); ++it)
-                cout << "[" << it->first << "]"; 
-            cout << endl;
-        }    
     }
     return 0;
 }
@@ -136,7 +129,7 @@ int sendToNameServer(char* query, int len, int clientsock, string address){
     //Standard DNS port
     int port = htons(53);
 
-    //checkCache(query);
+    checkCache(query);
     const char *cstr = address.c_str();
     //IP address of a root server
     int addr = inet_addr(cstr);
@@ -164,9 +157,9 @@ int sendToNameServer(char* query, int len, int clientsock, string address){
             cache[next.type] = next;
 
             printf("\nName: %s\n", next.type.c_str());
-            //printf("Address: %s\n", next.address);
-            //printf("TTL: %d\n", next.ttl);
-            //printf("Answers: %d\n", nsResponse[7]);
+            printf("Address: %s\n", next.address.c_str());
+            printf("TTL: %d\n", next.ttl);
+            printf("Answers: %d\n", nsResponse[7]);
             sendToNameServer(query,len,clientsock, next.address);
         }
         else{
@@ -227,11 +220,12 @@ struct nameserver getNext(char* nsResponse, int lenth){
     return nextQuery;
 }
 
-char* checkCache(char* query){
+string checkCache(char* query){
 
     //    time_t now;
     //    now = time(&now);
 
+    
     int v = 12;
     if(query[12] == 3){
         v = 20;
@@ -239,25 +233,27 @@ char* checkCache(char* query){
     char tmp[80];
     int y = 0;
     while(query[v] != '\0'){
+        if(query[v] < 41){
+            v++;
+        }
         tmp[y] = query[v];
         y++;
         v++;
     }
     tmp[y] = '\0';
 
-    //printf("%s\n", tmp);
-    printf("%lu\n", cache.size());
-
-    if(!cache.empty()){
-        for(cMap::iterator it = cache.begin();
-                it != cache.end(); ++it)
-            cout << "[" << it->first << "]"; 
-        cout << endl;
-
-        if(cache.count(tmp)){
-            cout << "We've been here";
-            //      printf("%s\n", cache[tmp].address);
-        }
+    string name = string(tmp);
+    //if(!cache.empty()){
+    //    for(cMap::iterator it = cache.begin();
+    //           it != cache.end(); ++it){
+    //       cout << "[" << it->second.type << "]"; 
+    //   cout << endl;
+    //    }
+    
+        if(cache.count(name)){
+            cout << "We've been here" << endl;
+                  //printf("%s\n", cache[name].address.c_str());
+   //     }
 
     }
     return "hey";
@@ -288,6 +284,9 @@ struct nameserver build(char* nsResponse, struct nameserver nextQuery, int x, in
     int v = 0;
     int d = nsResponse[lenth + 6] + 1;
     while(nsResponse[d] != '\0'){
+        if(nsResponse[d] < 41){
+            d++;
+        }
         temp[v] = nsResponse[d];
         d ++;
         v++;
