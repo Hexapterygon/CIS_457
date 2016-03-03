@@ -115,7 +115,7 @@ int sendToNameServer(char* query, int len, int clientsock, char* address){
     //Standard DNS port
     int port = htons(53);
     //IP address of a root server
-    int addr = inet_addr(address);
+    int addr = inet_addr("ns3.p31.dynect.net");
     serveraddr.sin_port = port;
     serveraddr.sin_addr.s_addr = addr;
     serveraddr.sin_family=AF_INET;
@@ -139,10 +139,10 @@ int sendToNameServer(char* query, int len, int clientsock, char* address){
         if(nsResponse[7] == 0){
             struct nameserver next =  getNext(nsResponse, lenth);
 
-            printf("\nType: %s\n", next.type);
+            printf("Type: %s\n", next.type);
             printf("Address: %s\n", next.address);
             printf("TTL: %d\n", next.ttl);
-            printf("Answers: %d\n", nsResponse[7]);
+            printf("Answers: %d\n\n\n", nsResponse[7]);
 
             sendToNameServer(query,len,clientsock, next.address);
         }

@@ -4,6 +4,13 @@
 #include <string.h>
 #include <stdlib.h>
 #include <arpa/inet.h>
+#include <unordered_map>
+#include <time.h>
+#include <iostream>
+#include <string>
+#include <vector>
+
+using namespace std;
 
 struct dnshdr{
     u_int16_t id;
@@ -27,19 +34,25 @@ struct dnshdr{
 struct sockaddr_in serveraddr, clientaddr;
 struct nameserver{
 
-    char type[80];
-    char address[80];
+    string type;
+    string address;
     int ttl;
     char* name;
+    time_t ttl_start;
 };
 
 int determineValid(char*);
 int determineError(char*);
 void errorResponse(char*,int);
-int sendToNameServer(char*,int, int, char*);
+int sendToNameServer(char*,int, int, string);
 void answerClient(char*, int);
+char* checkCache(char*);
+
 struct nameserver getNext(char*, int);
 struct nameserver build(char*, struct nameserver, int, int);
+
+typedef unordered_map<string, struct nameserver> cMap;
+cMap cache;
 
 int main (int argc, char** argv){
 
@@ -85,7 +98,7 @@ int main (int argc, char** argv){
         memcpy(&request, line, 12);
 
         int sze = 0;
-        char* rootAddr = "198.41.0.4";
+        string rootAddr = "198.41.0.4";
         if((sze = determineValid(line)) > 0){
             //Do no query recursively
             request.rd = 0;
@@ -93,15 +106,23 @@ int main (int argc, char** argv){
             memcpy(line, &request, 12);
             //send the request to the root resolver
             if(sendToNameServer(line, sze, sockfd, rootAddr)) {exit(1);}
+
+
+            else{
+                errorResponse(line, sockfd);
+            }
         }
-        else{
-            errorResponse(line, sockfd);
-        }
+
+        if(!cache.empty()){
+            for(cMap::iterator it = cache.begin();
+                    it != cache.end(); ++it)
+                cout << "[" << it->first << "]"; 
+            cout << endl;
+        }    
     }
     return 0;
 }
-
-int sendToNameServer(char* query, int len, int clientsock, char* address){
+int sendToNameServer(char* query, int len, int clientsock, string address){
 
     char nsResponse[512];
     socklen_t lent = sizeof(clientaddr);
@@ -114,8 +135,11 @@ int sendToNameServer(char* query, int len, int clientsock, char* address){
     }
     //Standard DNS port
     int port = htons(53);
+
+    //checkCache(query);
+    const char *cstr = address.c_str();
     //IP address of a root server
-    int addr = inet_addr(address);
+    int addr = inet_addr(cstr);
     serveraddr.sin_port = port;
     serveraddr.sin_addr.s_addr = addr;
     serveraddr.sin_family=AF_INET;
@@ -135,19 +159,18 @@ int sendToNameServer(char* query, int len, int clientsock, char* address){
     }
     else{
 
-
         if(nsResponse[7] == 0){
-            struct nameserver next =  getNext(nsResponse, lenth);
+            struct nameserver next = getNext(nsResponse, lenth);
+            cache[next.type] = next;
 
-            printf("\nType: %s\n", next.type);
-            printf("Address: %s\n", next.address);
-            printf("TTL: %d\n", next.ttl);
-            printf("Answers: %d\n", nsResponse[7]);
-
+            printf("\nName: %s\n", next.type.c_str());
+            //printf("Address: %s\n", next.address);
+            //printf("TTL: %d\n", next.ttl);
+            //printf("Answers: %d\n", nsResponse[7]);
             sendToNameServer(query,len,clientsock, next.address);
         }
         else{
-            printf("I got the answer\n");
+            //printf("I got the answer\n");
             answerClient(nsResponse, clientsock);
         }
     }
@@ -171,8 +194,6 @@ struct nameserver getNext(char* nsResponse, int lenth){
     //sections). This is attempting to match the first two bytes of an additional record with
     //the first two bytes of it's corresponding authoritative record. By doing this, we can
     //use both sections to glean the name, type, ttl, and address of a single nameserver. 
-    //
-
 
     while(x < 512){
         //First letter matches
@@ -197,7 +218,7 @@ struct nameserver getNext(char* nsResponse, int lenth){
                             }
                             break;
                         }
-                   }
+                    }
                 }
             }
         }
@@ -206,7 +227,46 @@ struct nameserver getNext(char* nsResponse, int lenth){
     return nextQuery;
 }
 
+char* checkCache(char* query){
+
+    //    time_t now;
+    //    now = time(&now);
+
+    int v = 12;
+    if(query[12] == 3){
+        v = 20;
+    }
+    char tmp[80];
+    int y = 0;
+    while(query[v] != '\0'){
+        tmp[y] = query[v];
+        y++;
+        v++;
+    }
+    tmp[y] = '\0';
+
+    //printf("%s\n", tmp);
+    printf("%lu\n", cache.size());
+
+    if(!cache.empty()){
+        for(cMap::iterator it = cache.begin();
+                it != cache.end(); ++it)
+            cout << "[" << it->first << "]"; 
+        cout << endl;
+
+        if(cache.count(tmp)){
+            cout << "We've been here";
+            //      printf("%s\n", cache[tmp].address);
+        }
+
+    }
+    return "hey";
+}
+
 struct nameserver build(char* nsResponse, struct nameserver nextQuery, int x, int lenth){
+
+    char temp[80];
+    char tmp[80];
 
     //get TTL
     u_int8_t ttl_1 = nsResponse[x + 5];
@@ -221,19 +281,19 @@ struct nameserver build(char* nsResponse, struct nameserver nextQuery, int x, in
     unsigned char ska = nsResponse[x +12];
     unsigned char reggae = nsResponse[x +13];
     unsigned char blues  = nsResponse[x +14];
-    sprintf(nextQuery.address, "%u.%u.%u.%u",jazz, ska, reggae, blues);
-    //add[strcspn(add, "\r\n")] = 0;
+    sprintf(temp, "%u.%u.%u.%u",jazz, ska, reggae, blues);
+    nextQuery.address = string(temp);
 
     //Get the name type of the request. 
     int v = 0;
     int d = nsResponse[lenth + 6] + 1;
     while(nsResponse[d] != '\0'){
-        //printf("%c\n", nsResponse[d]);
-        nextQuery.type[v] = nsResponse[d];
+        temp[v] = nsResponse[d];
         d ++;
         v++;
     }
-    nextQuery.type[v] = '\0';
+    temp[v] = '\0';
+    nextQuery.type = string(temp);
     return nextQuery;
 }
 
@@ -241,28 +301,6 @@ void answerClient(char* answerBuf, int sockfd){
 
     struct dnshdr ansHdr = {};
     memcpy(&ansHdr, answerBuf, 12);
-
-    /*printf("Recursion desired: %u\n", ansHdr.rd);
-    printf("TC: %u\n", ansHdr.tc);
-    printf("AA: %u\n", ansHdr.aa);
-    printf("OP: %u\n", ansHdr.opcode);
-    printf("QR: %u\n", ansHdr.qr);
-    printf("Rcode: %u\n", ansHdr.rcode);
-    printf("CD: %u\n", ansHdr.cd);
-    printf("AD: %u\n", ansHdr.ad);
-    printf("Z: %u\n", ansHdr.z);
-    printf("QCount: %u\n", ansHdr.qcount);
-    printf("AnCount: %u\n", ansHdr.ancount);
-    printf("AuthCount: %u\n", ansHdr.authcount);
-    printf("AddhCount: %u\n", ansHdr.addcount);
-
-    printf("5: %u\n", answerBuf[5]);
-    printf("6: %u\n", answerBuf[6]);
-    printf("7: %u\n", answerBuf[7]);
-    printf("8: %u\n", answerBuf[8]);
-    printf("9: %u\n", answerBuf[9]);
-    printf("Address: %u\n", answerBuf[10]);*/
-
 
     sendto(sockfd, answerBuf, 512, 0, (struct sockaddr*)&clientaddr,sizeof(clientaddr));
 
@@ -321,5 +359,4 @@ void errorResponse(char* req, int sockfd){
     memcpy(rep, &errHdr, 12);
 
     sendto(sockfd, rep, 12, 0, (struct sockaddr*)&clientaddr,sizeof(clientaddr));
-
 }
