@@ -44,11 +44,13 @@ struct nameserver{
 int determineValid(char*);
 int determineError(char*);
 void errorResponse(char*,int);
-int sendToNameServer(char*,int, int, string);
+int sendToNameServer(char*,int, int, string, int);
 void answerClient(char*, int);
-string checkCache(char*);
+string checkCache(char*, string);
+string parseName(string);
 
 struct nameserver getNext(char*, int);
+struct nameserver getAnswer(char*, int);
 struct nameserver build(char*, struct nameserver, int, int);
 
 typedef unordered_map<string, struct nameserver> cMap;
@@ -105,8 +107,7 @@ int main (int argc, char** argv){
             //Put modified header back into the buffer
             memcpy(line, &request, 12);
             //send the request to the root resolver
-            if(sendToNameServer(line, sze, sockfd, rootAddr)) {exit(1);}
-
+            if(sendToNameServer(line, sze, sockfd, rootAddr, 1)) {exit(1);}
 
             else{
                 errorResponse(line, sockfd);
@@ -115,8 +116,9 @@ int main (int argc, char** argv){
     }
     return 0;
 }
-int sendToNameServer(char* query, int len, int clientsock, string address){
+int sendToNameServer(char* query, int len, int clientsock, string address, int flag){
 
+    string cacheadd;
     char nsResponse[512];
     socklen_t lent = sizeof(clientaddr);
 
@@ -129,10 +131,16 @@ int sendToNameServer(char* query, int len, int clientsock, string address){
     //Standard DNS port
     int port = htons(53);
 
-    checkCache(query);
     const char *cstr = address.c_str();
-    //IP address of a root server
     int addr = inet_addr(cstr);
+
+    if(flag){
+        cacheadd = checkCache(query, address);
+        cstr = cacheadd.c_str();
+    }
+    addr = inet_addr(cstr);
+
+    //IP address of a root server
     serveraddr.sin_port = port;
     serveraddr.sin_addr.s_addr = addr;
     serveraddr.sin_family=AF_INET;
@@ -160,10 +168,12 @@ int sendToNameServer(char* query, int len, int clientsock, string address){
             printf("Address: %s\n", next.address.c_str());
             printf("TTL: %d\n", next.ttl);
             printf("Answers: %d\n", nsResponse[7]);
-            sendToNameServer(query,len,clientsock, next.address);
+            sendToNameServer(query,len,clientsock, next.address, 0);
         }
         else{
-            //printf("I got the answer\n");
+            printf("I got the answer\n");
+            //struct nameserver ans = getxt(nsResponse, lenth);
+            //cache[next.type] = next;
             answerClient(nsResponse, clientsock);
         }
     }
@@ -220,21 +230,24 @@ struct nameserver getNext(char* nsResponse, int lenth){
     return nextQuery;
 }
 
-string checkCache(char* query){
+string checkCache(char* query, string address){
 
     //    time_t now;
     //    now = time(&now);
 
-    
-    int v = 12;
-    if(query[12] == 3){
-        v = 20;
+    int v = 13;
+    int domains = 0;
+    if(query[13] == 'w' && query[14] == 'w' && query[15] == 'w'){
+        v = 17;
     }
     char tmp[80];
     int y = 0;
     while(query[v] != '\0'){
         if(query[v] < 41){
+            tmp[y] = '.';
             v++;
+            y++;
+            domains++;
         }
         tmp[y] = query[v];
         y++;
@@ -243,20 +256,41 @@ string checkCache(char* query){
     tmp[y] = '\0';
 
     string name = string(tmp);
-    //if(!cache.empty()){
-    //    for(cMap::iterator it = cache.begin();
-    //           it != cache.end(); ++it){
-    //       cout << "[" << it->second.type << "]"; 
-    //   cout << endl;
-    //    }
-    
-        if(cache.count(name)){
-            cout << "We've been here" << endl;
-                  //printf("%s\n", cache[name].address.c_str());
-   //     }
+    if(!cache.empty()){
+   /*     for(cMap::iterator it = cache.begin();
+                it != cache.end(); ++it){
+            cout << "[" << it->second.type << "]"; 
+            cout << endl;
+        } */
 
+        int numz = 0;
+        while(numz <= domains){
+            numz++;
+            cout << "NAME: " << name << endl;
+            if(cache.count(name)){
+                cout << "Retrieved " << cache[name].address << endl;
+                return cache[name].address;
+            }
+            else{
+
+                name = parseName(name);
+            }
+        }
     }
-    return "hey";
+    return address;
+}
+
+string parseName(string name){
+    string sub;
+    char tmp[80];
+    strcpy(tmp, name.c_str());
+    int i = strcspn(tmp, ".");
+
+    if(i < name.length()){
+        sub = name.substr(i+1, name.length());
+    }
+
+    return sub;
 }
 
 struct nameserver build(char* nsResponse, struct nameserver nextQuery, int x, int lenth){
@@ -285,6 +319,8 @@ struct nameserver build(char* nsResponse, struct nameserver nextQuery, int x, in
     int d = nsResponse[lenth + 6] + 1;
     while(nsResponse[d] != '\0'){
         if(nsResponse[d] < 41){
+            temp[v] = '.';
+            v++;
             d++;
         }
         temp[v] = nsResponse[d];
