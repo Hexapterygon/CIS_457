@@ -37,7 +37,7 @@ struct nameserver{
     string type;
     string address;
     int ttl;
-    char* name;
+    string name;
     time_t ttl_start;
 };
 
@@ -45,8 +45,8 @@ int determineValid(char*);
 int determineError(char*);
 void errorResponse(char*,int);
 int sendToNameServer(char*,int, int, string, int);
-void answerClient(char*, int);
-string checkCache(char*, string);
+void answerClient(char*, int, int);
+string checkCache(char*, string, int);
 string parseName(string);
 
 struct nameserver getNext(char*, int);
@@ -135,7 +135,14 @@ int sendToNameServer(char* query, int len, int clientsock, string address, int f
     int addr = inet_addr(cstr);
 
     if(flag){
-        cacheadd = checkCache(query, address);
+        cacheadd = checkCache(query, address, clientsock);
+        if((cacheadd.compare("answered")) == 0){
+            return 0;
+        } 
+        else if((cacheadd.compare("erase")) == 0){
+            sendToNameServer(query, len, clientsock, address, flag);
+            return 0;
+        }
         cstr = cacheadd.c_str();
     }
     addr = inet_addr(cstr);
@@ -172,12 +179,64 @@ int sendToNameServer(char* query, int len, int clientsock, string address, int f
         }
         else{
             printf("I got the answer\n");
-            //struct nameserver ans = getxt(nsResponse, lenth);
-            //cache[next.type] = next;
-            answerClient(nsResponse, clientsock);
+            struct nameserver ans = getAnswer(nsResponse, lenth);
+            cache[ans.name] = ans;
+            answerClient(nsResponse, clientsock,512);
         }
     }
     return 0;
+}
+
+struct nameserver getAnswer(char* nsResponse, int lenth){
+
+    char temp[80];
+    struct nameserver ans = {};
+
+    //printf("%d\n", nsResponse[lenth +5]);
+
+    char tmp[80];
+    tmp[0] = 'A';
+    int y = 1;
+    int v = nsResponse[lenth + 6] + 1;
+    while(nsResponse[v] != '\0'){
+        if(nsResponse[v] < 41){
+            tmp[y] = '.';
+            v++;
+            y++;
+        }
+        tmp[y] = nsResponse[v];
+        y++;
+        v++;
+    }
+    tmp[y] = '\0';
+
+    string name = string(tmp);
+    //cout << name << endl;
+    ans.name = name;
+
+    //get Address
+    unsigned char jazz = nsResponse[lenth + 17];
+    unsigned char ska = nsResponse[lenth + 18];
+    unsigned char reggae = nsResponse[lenth + 19];
+    unsigned char blues  = nsResponse[lenth + 20];
+    sprintf(temp, "%u.%u.%u.%u",jazz, ska, reggae, blues);
+
+    ans.address = string(temp);
+    //cout << ans.address << endl;
+
+    //get ttl
+    u_int8_t ttl_1 = nsResponse[lenth + 11];
+    u_int8_t ttl_2 = nsResponse[lenth + 12];
+    u_int8_t ttl_3 = nsResponse[lenth + 13];
+    u_int8_t ttl_4 = nsResponse[lenth + 14];
+    u_int32_t ttl = (u_int32_t) ttl_1 << 24 | (u_int32_t)ttl_2 << 16 | (u_int32_t)ttl_3 << 8 | (u_int32_t)ttl_4;
+
+    ans.ttl = ttl;
+    //printf("%d\n", ans.ttl);
+    //cout << ans.address << endl;
+    ans.ttl_start = time(NULL);
+    return ans;
+
 }
 
 struct nameserver getNext(char* nsResponse, int lenth){
@@ -230,10 +289,8 @@ struct nameserver getNext(char* nsResponse, int lenth){
     return nextQuery;
 }
 
-string checkCache(char* query, string address){
+string checkCache(char* query, string address, int sockfd){
 
-    //    time_t now;
-    //    now = time(&now);
 
     int v = 13;
     int domains = 0;
@@ -241,7 +298,8 @@ string checkCache(char* query, string address){
         v = 17;
     }
     char tmp[80];
-    int y = 0;
+    tmp[0] = 'A';
+    int y = 1;
     while(query[v] != '\0'){
         if(query[v] < 41){
             tmp[y] = '.';
@@ -257,23 +315,129 @@ string checkCache(char* query, string address){
 
     string name = string(tmp);
     if(!cache.empty()){
-   /*     for(cMap::iterator it = cache.begin();
-                it != cache.end(); ++it){
-            cout << "[" << it->second.type << "]"; 
-            cout << endl;
-        } */
-
         int numz = 0;
-        while(numz <= domains){
-            numz++;
-            cout << "NAME: " << name << endl;
-            if(cache.count(name)){
-                cout << "Retrieved " << cache[name].address << endl;
-                return cache[name].address;
+        //cout << name << endl;
+        if(cache.count(name)){
+            time_t  cttl;
+            cttl = (time(NULL) - cache[name].ttl_start);
+            //cout << "CTTL: " << cttl << endl;
+            cache[name].ttl = cache[name].ttl - (cttl);
+            cache[name].ttl_start = time(NULL);
+
+            if((cache[name].ttl) <= 0){
+                cache.erase(name);
+                address = "erase";
             }
             else{
 
-                name = parseName(name);
+                char answerPacket[512];
+                struct dnshdr anshdr = {};
+
+                //cout << cache[name].ttl << endl;
+                memcpy(&anshdr, query, 12);
+                anshdr.qr = 1;
+                anshdr.ancount = htons(1);
+                anshdr.authcount = 0;
+                anshdr.addcount = 0;
+                memcpy(answerPacket, &anshdr, 12);
+
+                int idc = determineValid(query) + 1;
+                int other = 12;
+
+                while(other < idc){
+                    answerPacket[other] = query[other];
+                    //     printf("%d\n", answerPacket[other]);
+                    other++;
+                }
+                answerPacket[idc] = 0;
+                answerPacket[idc + 1] = 1;
+                answerPacket[idc + 2] = 0;
+                answerPacket[idc + 3] = 1;
+                answerPacket[idc + 4] = 192;
+                answerPacket[idc + 5] = 12;
+                answerPacket[idc + 6] = 0;
+                answerPacket[idc + 7] = 1;
+                answerPacket[idc + 8] = 0;
+                answerPacket[idc + 9] = 1;
+                answerPacket[idc + 10] = (cache[name].ttl & 0xFF000000) >>24;
+                answerPacket[idc + 11] =  (cache[name].ttl & 0xFF0000) >>16;
+                answerPacket[idc + 12] =  (cache[name].ttl & 0xFF00)>>8;
+                answerPacket[idc + 13] =  cache[name].ttl & 0xFF;
+                answerPacket[idc + 14] = 0;
+                answerPacket[idc + 15] = 4;
+
+                string huh  = cache[name].address;
+                string ooo;
+                string running;
+                char lips[80];
+                strcpy(lips, huh.c_str());
+                int eh = strcspn(lips, ".");
+
+                if(eh < huh.length()){
+                    ooo = huh.substr(0, eh);
+                    running = huh.substr(eh, huh.length());
+                    answerPacket[idc + 16] = (unsigned char)atoi(ooo.c_str());
+                }
+
+                char zips[80];
+                strcpy(zips, huh.c_str());
+                eh = strcspn(lips, ".");
+
+                if(eh < running.length()){
+                    ooo  = running.substr(1, eh);
+                    running  = running.substr(eh, running.length());
+                    answerPacket[idc + 17] = (unsigned char)atoi(ooo.c_str());
+                }
+                char nips[80];
+                strcpy(zips, huh.c_str());
+                eh = strcspn(lips, ".");
+
+                if(eh < running.length()){
+                    ooo  = running.substr(2, eh);
+                    running  = running.substr(eh, running.length());
+                    answerPacket[idc + 18] = (unsigned char)atoi(ooo.c_str());
+                }
+                char uips[80];
+                strcpy(zips, huh.c_str());
+                eh = strcspn(lips, ".");
+
+                if(eh < running.length()){
+                    ooo  = running.substr(3, eh);
+                    running  = running.substr(eh, running.length());
+                    answerPacket[idc + 19] = (unsigned char)atoi(ooo.c_str());
+                }
+
+                cout << "Retrieved: " << cache[name].address << " from cache" << endl;;
+                answerClient(answerPacket, sockfd, other + 20);
+                address = "answered";
+            }
+        }
+        else{
+            name = name.substr(1, name.length());
+            while(numz <= domains){
+                numz++;
+                //cout << "NAME: " << name << endl;
+                if(cache.count(name)){
+                    time_t  cttl;
+                    cttl = (time(NULL) - cache[name].ttl_start);
+                    //cout << "CTTL: " << cttl << endl;
+                    cache[name].ttl = cache[name].ttl - (cttl);
+                    cache[name].ttl_start = time(NULL);
+
+                    if((cache[name].ttl) <= 0){
+                        cache.erase(name);
+                        address = "erase";
+                        return address;
+                    }
+                    else{
+                    cout << "Retrieved " << cache[name].address << " from cache" << endl;
+                    return cache[name].address;
+                    }
+                }
+                else{
+
+                    name = parseName(name);
+                }
             }
         }
     }
@@ -329,15 +493,17 @@ struct nameserver build(char* nsResponse, struct nameserver nextQuery, int x, in
     }
     temp[v] = '\0';
     nextQuery.type = string(temp);
+
+    nextQuery.ttl_start = time(NULL);
     return nextQuery;
 }
 
-void answerClient(char* answerBuf, int sockfd){
+void answerClient(char* answerBuf, int sockfd, int sz){
 
     struct dnshdr ansHdr = {};
     memcpy(&ansHdr, answerBuf, 12);
 
-    sendto(sockfd, answerBuf, 512, 0, (struct sockaddr*)&clientaddr,sizeof(clientaddr));
+    sendto(sockfd, answerBuf, sz, 0, (struct sockaddr*)&clientaddr,sizeof(clientaddr));
 
 }
 
